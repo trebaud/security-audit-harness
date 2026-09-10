@@ -1,0 +1,62 @@
+{
+  "idor": {
+    "name": "Insecure direct object reference",
+    "cwe": [639],
+    "covers": "object read or mutated by client-supplied id without ownership check"
+  },
+  "broken-access-control": {
+    "name": "Broken access control",
+    "cwe": [285, 862, 863],
+    "covers": "missing or wrong role, permission, scope or tenant check that is not an id lookup"
+  },
+  "auth-bypass": {
+    "name": "Authentication bypass",
+    "cwe": [287, 306, 288],
+    "covers": "login, session, token, 2FA, magic-link, passkey or API-key check that can be skipped or forged"
+  },
+  "csrf": {
+    "name": "Cross-site request forgery",
+    "cwe": [352],
+    "covers": "state change on a cookie-authenticated route without CSRF protection"
+  },
+  "ssrf": {
+    "name": "Server-side request forgery",
+    "cwe": [918],
+    "covers": "outbound request to a user-influenced destination"
+  },
+  "injection": {
+    "name": "Injection",
+    "cwe": [74, 943, 89, 78, 22, 1321],
+    "covers": "NoSQL/SQL/command/template/header injection, path traversal, prototype pollution"
+  },
+  "race-condition": {
+    "name": "Race condition",
+    "cwe": [362, 367],
+    "covers": "double-spend, TOCTOU, non-atomic check-then-act on money or redemption state"
+  },
+  "business-logic": {
+    "name": "Business-logic error",
+    "cwe": [841, 840],
+    "covers": "price, fee, limit, refund, coupon or state-machine rule bent without breaking a technical control"
+  },
+  "webhook-forgery": {
+    "name": "Webhook forgery",
+    "cwe": [345, 347, 294],
+    "covers": "inbound callback whose origin, signature or replay is not verified"
+  },
+  "secret-exposure": {
+    "name": "Secret exposure",
+    "cwe": [200, 532, 522],
+    "covers": "key, token, PIN, voucher code or credential returned, logged or derivable"
+  },
+  "crypto-weakness": {
+    "name": "Cryptographic weakness",
+    "cwe": [327, 330, 338],
+    "covers": "weak randomness, predictable tokens, wrong signature verification"
+  },
+  "other": {
+    "name": "Other",
+    "cwe": [],
+    "covers": "fits no row above; name the class in message.text"
+  }
+}

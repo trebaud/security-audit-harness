@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [{
+    "tool": { "driver": { "name": "security-audit" } },
+    "results": [
+      {
+        "ruleId": "idor",
+        "message": { "text": "GET /orders/:id returns any order by id without an owner check." },
+        "locations": [{ "physicalLocation": { "artifactLocation": { "uri": "src/routes/orders.ts" }, "region": { "startLine": 42 } } }],
+        "partialFingerprints": { "security-audit/v1": "idor|src/routes/orders.ts|GET /orders/:id" },
+        "properties": { "severity": "High", "flow": "req.params.id -> Order.findById (src/routes/orders.ts:42)", "impact": "Any order readable", "likelihood": "Ids are sequential", "repro": "curl -H 'Cookie: sid=…' /orders/1", "fix": "Filter by owner id in the query" }
+      },
+      {
+        "ruleId": "ssrf",
+        "message": { "text": "POST /webhooks/test fetches a caller-supplied URL." },
+        "locations": [{ "physicalLocation": { "artifactLocation": { "uri": "src/routes/webhooks.ts" }, "region": { "startLine": 10 } } }],
+        "partialFingerprints": { "security-audit/v1": "ssrf|src/routes/webhooks.ts|POST /webhooks/test" },
+        "properties": { "severity": "Medium", "flow": "req.body.url -> fetch (src/routes/webhooks.ts:10)", "impact": "Internal network reachable", "likelihood": "Authenticated users", "repro": "", "fix": "Allowlist hosts" }
+      }
+    ]
+  }]
+}
