@@ -1,5 +1,4 @@
-node_modules/
-
 # Scratch output when the harness is dogfooded on itself
-.security-audit/run.sarif
-.security-audit/reports/
+security/audit/run.sarif
+security/audit/reports/
+security/audit/scan/

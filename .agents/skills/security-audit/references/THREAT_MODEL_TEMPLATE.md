@@ -1,9 +1,9 @@
 # Threat model — <project name>
 
-> **Template.** Replace every `<…>` and the example rows with this project's facts, then delete
-> this note. Keep the table shapes and the `E`/`T` id schemes: the skill cites them in findings and
-> critics use the **Controls** column to kill false positives. Until this file is filled in, the
-> audit derives the same tables from the code on each run and says so in the report.
+> **Template.** The skill copies this shape to `THREAT_MODEL.md` at the project root when the audited
+> repo has none, filling every `<…>` and example row from the code, and deletes this note. Keep the
+> table shapes and the `E`/`T` id schemes: the skill cites them in findings and critics use the
+> **Controls** column to kill false positives. Owners edit the derived file, never this template.
 
 ## System shape
 
@@ -57,8 +57,15 @@ function when you can — a critic with a concrete control kills more false posi
 
 ## Out of scope — drop, no critic
 
+The audit's pre-filter drops anything in this table before a critic sees it. This is the project's
+drop list: delete a row to bring that class back into the audit, add a row to exclude one.
+
 | Not a finding here | Why |
 |---|---|
+| Unsafe defaults that the deployed config overrides | <config is validated at startup; a default that never ships is not reachable> |
+| PII or tokens in logs | <covered by the logging-redaction review, not by this audit> |
+| Missing security headers (CSP, HSTS, …) | <set at the edge/proxy> |
+| Informational or best-practice notes with no attacker path | <not a finding; note in one line or drop> |
 | Reflected/stored XSS in rendered UI | <this is a JSON API; the UI is a separate repo> |
 | L3/L4 DDoS | <absorbed at the edge> |
 | TLS spoofing/downgrade | <TLS terminates at the edge/proxy and the app deliberately trusts it> |

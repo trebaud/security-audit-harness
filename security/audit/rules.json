@@ -32,22 +32,17 @@
   "race-condition": {
     "name": "Race condition",
     "cwe": [362, 367],
-    "covers": "double-spend, TOCTOU, non-atomic check-then-act on money or redemption state"
+    "covers": "TOCTOU or non-atomic check-then-act on state a concurrent request can change in between"
   },
   "business-logic": {
     "name": "Business-logic error",
     "cwe": [841, 840],
-    "covers": "price, fee, limit, refund, coupon or state-machine rule bent without breaking a technical control"
-  },
-  "webhook-forgery": {
-    "name": "Webhook forgery",
-    "cwe": [345, 347, 294],
-    "covers": "inbound callback whose origin, signature or replay is not verified"
+    "covers": "an amount, limit, discount or state-machine rule bent without breaking a technical control"
   },
   "secret-exposure": {
     "name": "Secret exposure",
     "cwe": [200, 532, 522],
-    "covers": "key, token, PIN, voucher code or credential returned, logged or derivable"
+    "covers": "key, token, credential or other secret value returned, logged or derivable"
   },
   "crypto-weakness": {
     "name": "Cryptographic weakness",
