@@ -1,11 +1,13 @@
 # Security Audit Harness
 
-A harness for security audits that stores and dedups its findings in a SARIF format.
+A harness for security audits optimized for large codebases.
+It stores and dedups its findings in a SARIF format.
 
-- **Agent Skill**: `/security-audit <scope> [--sarif]` traces sources to sinks, proves
+Includes:
+- **A security audit skill**: `/security-audit <scope> [--sarif]` traces sources to sinks, proves
   reachability, triages every candidate through a critic subagent, and emits a failing regression
   test per Critical/High. Bootstraps `THREAT_MODEL.md` when absent.
-- **Scan skill**: `/scan [scope] [--sarif]` splits a large audit by module, by groups of ~25
+- **A Scan skill**: `/scan [scope] [--sarif]` splits a large audit by module, by groups of ~25
   endpoints or by a custom split you describe, runs `/security-audit` headless in one git worktree per group (native `git worktree`
   or [mori](https://github.com/trebaud/mori)), then folds every group into one deduped SARIF run,
   a cross-group chain pass and one report.
