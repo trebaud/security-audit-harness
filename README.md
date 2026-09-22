@@ -34,8 +34,6 @@ applies that at scale: it inventories every entry point and audits them in small
   Codex, OpenCode, or another. `scan` runs each group headless with it.
 - Node 18+
 - git
-- Optional: [mori](https://github.com/trebaud/mori) as the worktree backend (needs `go`; `scan`
-  installs it when missing)
 
 ## Install
 
@@ -57,7 +55,7 @@ file without `--force`, and never touches an existing `baseline.sarif` or `rules
 | Claude Code | `.claude/skills/` (linked) | `/security-audit src` | `claude -p`, tool allowlist |
 | Codex | `.agents/skills/` | `$security-audit src`, or name the skill | `codex exec --sandbox workspace-write` |
 | OpenCode | `.agents/skills/`, `.claude/skills/` | ask for the skill by name | `opencode run`, `OPENCODE_PERMISSION` allowlist |
-| Other | wherever it reads `SKILL.md` | ask for the skill by name | `SCAN_AGENT_CMD`, prompt appended |
+| Other | wherever it reads `SKILL.md` | ask for the skill by name | its own headless mode |
 
 The skills name no vendor tool. Where they need a subagent, a question to the user or a background
 command, they say what to do when the agent has none. Examples below use the Claude Code slash
@@ -102,8 +100,7 @@ Use it on PRs (`/security-audit pr#123`) to audit only what changed.
 ### `/scan`: a large codebase
 
 ```
-/scan [scope] [--by modules|endpoints|custom] [--size 25] [--parallel 4]
-      [--worktrees git|mori] [--agent claude|codex|opencode|custom] [--sarif] [--resume <run-id>]
+/scan [scope] [--by modules|endpoints|custom] [--size 25] [--parallel 4] [--sarif]
 ```
 
 | Flag | Default | Effect |
@@ -111,24 +108,24 @@ Use it on PRs (`/security-audit pr#123`) to audit only what changed.
 | `--by` | asked | `modules`: one group per feature directory. `endpoints`: groups of `--size` entry points. `custom`: groups you describe in plain words. |
 | `--size N` | 25 | Entry points per group with `--by endpoints`. |
 | `--parallel N` | 4 | Concurrent group audits. Use 2 for a tight rate limit, 8 for a high one. |
-| `--worktrees` | asked | `git`: native worktrees under `../<repo>.scan/<run-id>/`. `mori`: worktrees under `~/.mori/worktrees/<repo>/`, runs `.mori.json` `post_create`. |
-| `--agent` | the current agent | CLI that runs each group headless. `custom` runs `SCAN_AGENT_CMD`. |
 | `--sarif` | off | Merge the combined findings into the baseline, once. |
-| `--resume <run-id>` | | Continue an interrupted scan at its first unfinished phase. |
 
-Flags that are not given become questions. The scan runs in phases:
+Flags that are not given become questions. There is no helper script: the agent running `/scan`
+does each phase itself with git, the shell and `sarif.mjs`.
 
 1. **Preflight.** Checks the environment, derives the threat model once in the main tree if
    needed, warns about uncommitted changes (worktrees are cut from `HEAD`).
 2. **Inventory and split.** Lists every entry point (routes, webhooks, queue consumers, workers,
-   CLI commands, cron jobs) into `inventory.json`, shows counts per module, and proposes a split.
-   You confirm or edit the group table before anything runs.
-3. **Worktrees.** One worktree and branch `scan-<run-id>-<gNN>` per group, with the harness, the
-   threat model and the group manifest copied in, and dependencies installed so tests can run.
-4. **Run.** The chosen agent runs the security-audit skill with `<group> --sarif --no-merge` in
-   each worktree, headless and in the background, under that agent's permission controls. A group
-   is `done` only when the agent exits 0 and its `run.sarif` validates. Failed groups can be
-   retried with `--retry-failed`.
+   CLI commands, cron jobs), shows counts per module, and proposes a split. You confirm or edit
+   the group table before anything runs.
+3. **Worktrees.** One `git worktree` and branch `scan-<run-id>-<gNN>` per group, under
+   `../<repo>.scan/<run-id>/` (or with [mori](https://github.com/trebaud/mori) when the repo has a
+   `.mori.json`, so its `post_create` setup runs), with the harness, the threat model and the group manifest copied
+   in, and dependencies installed so tests can run.
+4. **Run.** The CLI you ran `/scan` from runs the security-audit skill with `<group> --sarif
+   --no-merge` in each worktree, headless, `--parallel` at a time through `xargs -P`. A group
+   is `done` only when the agent exits 0 and its `run.sarif` validates. The skill offers to rerun
+   failed groups.
 5. **Aggregate.** Combines every group's SARIF into `combined.sarif` (two groups hitting the same
    sink become one result), runs a critic pass for chains that cross groups, copies the new tests
    into the main tree without overwriting conflicts, merges into the baseline once with `--sarif`,
@@ -139,31 +136,14 @@ Examples:
 
 ```
 /scan src --by modules --sarif
-/scan src --by endpoints --size 20 --parallel 8 --worktrees git --agent codex --sarif
+/scan src --by endpoints --size 20 --parallel 8 --sarif
 /scan src --by custom
     > payments and refunds together, all /admin routes on their own, webhooks on their own
-/scan --resume 2026-09-22-1430
 ```
 
-If the repo runs tests with a command outside the default allowlist (npm, pnpm, yarn, bun, vitest,
-jest, mocha, `node --test`, go, pytest, cargo), pass it to the group audits as comma-separated
-command prefixes (used by `claude` and `opencode`; `codex` relies on its sandbox instead):
-
-```sh
-SCAN_EXTRA_TOOLS="make test,just check"
-```
-
-For an agent without a built-in adapter, set a command that takes the prompt as its last argument
-and pass `--agent custom`. It gets no permission rules from the scan, so pick the CLI's own
-headless-safe mode:
-
-```sh
-SCAN_AGENT_CMD="gemini --yolo -p"
-```
-
-Run state lives in `security/audit/scan/<run-id>/` (gitignored): `inventory.json`, `plan.json`,
-group manifests, logs (`logs/<gNN>.log`), per-group SARIF and reports. Every step rereads
-`plan.json`, so any interrupted step resumes by rerunning it.
+The group audits get only read, edit, git, `sarif.mjs` and the repo's test command (Codex: its
+workspace-write sandbox). Run state lives in `security/audit/scan/<run-id>/` (gitignored): the
+group list, manifests, logs, the combined SARIF and the group reports.
 
 ### Outputs
 
