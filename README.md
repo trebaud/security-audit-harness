@@ -100,14 +100,12 @@ Use it on PRs (`/security-audit pr#123`) to audit only what changed.
 ### `/scan`: a large codebase
 
 ```
-/scan [scope] [--by modules|endpoints|custom] [--size 25] [--parallel 4] [--sarif]
+/scan [scope] [--by modules|endpoints|custom] [--sarif]
 ```
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--by` | asked | `modules`: one group per feature directory. `endpoints`: groups of `--size` entry points. `custom`: groups you describe in plain words. |
-| `--size N` | 25 | Entry points per group with `--by endpoints`. |
-| `--parallel N` | 4 | Concurrent group audits. Use 2 for a tight rate limit, 8 for a high one. |
+| `--by` | asked | `modules`: one group per feature directory. `endpoints`: groups of 25 entry points, or the size you name in the request or when asked. `custom`: groups you describe in plain words. |
 | `--sarif` | off | Merge the combined findings into the baseline, once. |
 
 Flags that are not given become questions. There is no helper script: the agent running `/scan`
@@ -123,7 +121,7 @@ does each phase itself with git, the shell and `sarif.mjs`.
    `.mori.json`, so its `post_create` setup runs), with the harness, the threat model and the group manifest copied
    in, and dependencies installed so tests can run.
 4. **Run.** The CLI you ran `/scan` from runs the security-audit skill with `<group> --sarif
-   --no-merge` in each worktree, headless, `--parallel` at a time through `xargs -P`. A group
+   --no-merge` in each worktree, headless, four at a time through `xargs -P 4`. A group
    is `done` only when the agent exits 0 and its `run.sarif` validates. The skill offers to rerun
    failed groups.
 5. **Aggregate.** Combines every group's SARIF into `combined.sarif` (two groups hitting the same
@@ -136,7 +134,7 @@ Examples:
 
 ```
 /scan src --by modules --sarif
-/scan src --by endpoints --size 20 --parallel 8 --sarif
+/scan src --by endpoints --sarif
 /scan src --by custom
     > payments and refunds together, all /admin routes on their own, webhooks on their own
 ```

@@ -1,7 +1,7 @@
 ---
 name: scan
 description: Orchestrates a split security audit of a large codebase. Inventories the entry points, agrees a split with the user (by module, by groups of ~25 endpoints, or a custom split the user describes), creates one git worktree per group, runs the security-audit skill headless in each in parallel, then aggregates every group's findings into one deduped SARIF run, a cross-group chain pass and one final report. Use when the scope is too large for one audit session, or when asked to "scan the whole repo", "split the audit", "audit in parallel", "run security-audit per module".
-argument-hint: [scope] [--by modules|endpoints|custom] [--size 25] [--parallel 4] [--sarif]
+argument-hint: [scope] [--by modules|endpoints|custom] [--sarif]
 allowed-tools: Read, Grep, Glob, Agent, AskUserQuestion, Write(THREAT_MODEL.md), Write(security/audit/**), Edit(security/audit/**), Bash(node .agents/skills/security-audit/scripts/*), Bash(git status:*), Bash(git log:*), Bash(git worktree:*), Bash(git branch:*), Bash(mori:*), Bash(git add THREAT_MODEL.md), Bash(git commit:*)
 ---
 
@@ -18,8 +18,6 @@ there is no `src`). Flags may appear anywhere; each preselects the answer to the
 below, which is then not asked.
 
 - `--by modules|endpoints|custom`: split strategy
-- `--size N`: entry points per group for `endpoints` (default 25)
-- `--parallel N`: concurrent audits (default 4)
 - `--sarif`: merge the combined findings into `security/audit/baseline.sarif`
 
 Run everything from the repository root. Names used below:
@@ -76,19 +74,17 @@ Then:
    largest module. Then ask the user, unless `--by` was given. Put the recommended option first:
    - **By modules**: one group per feature directory, with that directory as the audit scope, so
      the audit also reads the module's non-endpoint code. Fold modules with fewer than 5 entry
-     points together; cut a module with more than 2× `--size` along file boundaries. Recommend
+     points together; cut a module with more than 50 entry points along file boundaries. Recommend
      this when module sizes are within ~3× of each other.
-   - **By endpoint groups**: groups of `--size` entry points, ordered by module, then file, then
-     line. Never split a handler file unless it alone holds more than the size. Recommend this when
-     one module dominates, or when the codebase is flat.
+   - **By endpoint groups**: groups of 25 entry points, or the size the user gives in the
+     request or in their answer, ordered by module, then file, then line. Never split a handler
+     file unless it alone holds more than the group size. Recommend this when one module
+     dominates, or when the codebase is flat.
    - **Custom split**: the user describes the groups in their own words, for example "payments and
      refunds together, all `/admin` routes on their own, webhooks on their own, the rest in one
      group". Offer it whenever the user has a view on ownership or risk. Never recommend it by
      default. Each entry point goes to the first group that matches it; entry points no group
      matches go in a trailing `unassigned` group unless the user says to skip them.
-
-   In the same question, unless `--parallel` was given, ask for the parallelism: 4 is the default,
-   2 suits a small machine or a tight rate limit, 8 needs a high API rate limit.
 
 3. **Groups.** Number the groups `g01`, `g02`, …. A group's scope is either a directory (a whole
    module) or a manifest `@security/audit/scan/<run-id>/manifests/<gNN>.md`: one entry point per
@@ -172,7 +168,7 @@ Then install dependencies in each worktree with the lockfile's install command (
 2. **Run.** As a background command, and with `mkdir -p "$RUN/logs"` first:
 
    ```sh
-   xargs -P <parallel> -L 1 sh "$RUN/run-group.sh" < "$RUN/groups.txt"
+   xargs -P 4 -L 1 sh "$RUN/run-group.sh" < "$RUN/groups.txt"
    ```
 
    Group audits take minutes to hours; a foreground call would hit the shell timeout. While it
