@@ -10,8 +10,12 @@ each group as an independent headless audit in its own git worktree, and folds t
 one deduped SARIF log and one report. Findings persist across runs in a committed baseline, so
 each new run only surfaces what changed.
 
-Inspired by the results presented by Vasilii Ermilov at BSides Montréal 2026
-([slides](https://inkz.github.io/presentations/2026-bsides-montreal.pdf)).
+## Why this design
+
+[*Can LLMs Really Find IDORs?*](https://inkz.github.io/presentations/2026-bsides-montreal.pdf)
+(Vasilii Ermilov, BSides Montréal 2026) found that auditing each batch of endpoints separately
+catches 4–6× more real vulnerabilities than one prompt over the whole repo. The `scan` skill
+applies that at scale: it inventories every entry point and audits them in small groups.
 
 ## What it contains
 
@@ -41,8 +45,8 @@ Inspired by the results presented by Vasilii Ermilov at BSides Montréal 2026
 
 The installer copies both skills into `.agents/skills/` and `rules.json` into the target repo,
 links `.claude/skills/<name>` to them for Claude Code, creates `security/audit/`, and appends the
-scratch paths (`run.sarif`, `reports/`, `scan/`) to `.gitignore`. It never overwrites an existing file without `--force`, and never touches an
-existing `baseline.sarif` or `rules.json`.
+scratch paths (`run.sarif`, `reports/`, `scan/`) to `.gitignore`. It never overwrites an existing
+file without `--force`, and never touches an existing `baseline.sarif` or `rules.json`.
 
 ## Usage
 
