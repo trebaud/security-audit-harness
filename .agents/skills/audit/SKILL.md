@@ -1,8 +1,8 @@
 ---
-name: security-audit
+name: audit
 description: White-box security audit of a scope (path, module, or PR diff) for IDOR, CSRF, SSRF, NoSQL/SQL injection, auth bypass, race conditions, business-logic errors and broken access control. Traces user input to sink, proves reachability, has an adversarial critic rate severity, confirms Critical/High with failing-on-vulnerable tests. Use for security reviews, audits, pentests, PR security checks.
-argument-hint: <scope: path | module | pr#NUMBER | git-ref | @manifest> [--sarif [--no-merge]]
-allowed-tools: Read, Grep, Glob, Agent, Bash(gh pr diff:*), Bash(git diff:*), Bash(git log:*), Write(security/audit/reports/**), Write(THREAT_MODEL.md), Write(security/audit/run.sarif), Edit(security/audit/run.sarif), Bash(node .agents/skills/security-audit/scripts/*)
+argument-hint: "<scope: path | module | pr#NUMBER | git-ref | @manifest> [--sarif [--no-merge]]"
+allowed-tools: Read, Grep, Glob, Agent, Bash(gh pr diff:*), Bash(git diff:*), Bash(git log:*), Write(security/audit/reports/**), Write(THREAT_MODEL.md), Write(security/audit/run.sarif), Edit(security/audit/run.sarif), Write(security/audit/rules.json), Edit(.gitignore), Write(.gitignore), Bash(node *sarif.mjs *)
 ---
 
 # Security Audit
@@ -37,6 +37,9 @@ The skill runs under any coding agent (Claude Code, Codex, OpenCode, …) and na
 - **Ask the user**: your structured-question tool if you have one, else a short numbered list of
   choices in plain text; then wait. In a headless run nobody answers: stop and say what is needed.
 - **Search**: whatever file search you have (a glob or grep tool, `rg`, `find`).
+- **`<skill-dir>`**: the directory holding this `SKILL.md`, wherever the skill was installed
+  (a plugin cache, `~/.agents/skills/`, the repo's `.agents/skills/`, …). Write it as an absolute
+  path in commands. `sarif.mjs` is `node <skill-dir>/scripts/sarif.mjs`.
 
 ## Output
 
@@ -50,6 +53,26 @@ route group, worker area, …) and run steps 1–2 in one subagent per slice, in
 steps 3 and 5 run once over the merged candidates.
 
 ## Workflow
+
+### Setup (first run in a repo)
+
+Run from the repository root. Before step 0, make sure the repo has the audit's home:
+
+- If `security/audit/rules.json` is missing, copy [assets/rules.json](assets/rules.json) there.
+  It is the project's rule list from then on; never overwrite an existing one.
+- If `.gitignore` does not list `security/audit/run.sarif`, append this block (create the file
+  if needed), and add any of its three paths an older copy of the block lacks:
+
+  ```gitignore
+  # security-audit scratch output: one run's SARIF (after the merge it holds only
+  # that run's new results, with exploit details), the local audit reports and
+  # the scan skill's run folders
+  security/audit/run.sarif
+  security/audit/reports/
+  security/audit/scan/
+  ```
+
+Say in one line what you created. Both files are committed with the first baseline.
 
 ### 0 — Precondition: a threat model exists
 
@@ -117,8 +140,8 @@ Follow [references/SARIF_OUTPUT.md](references/SARIF_OUTPUT.md): write the fixed
 closed rule ids and `security-audit/v1` fingerprints to `security/audit/run.sarif`, then
 
 ```sh
-node .agents/skills/security-audit/scripts/sarif.mjs validate security/audit/run.sarif
-node .agents/skills/security-audit/scripts/sarif.mjs merge security/audit/run.sarif
+node <skill-dir>/scripts/sarif.mjs validate security/audit/run.sarif
+node <skill-dir>/scripts/sarif.mjs merge security/audit/run.sarif
 ```
 
 Validate until it prints `valid`; run the merge exactly once. With `--no-merge`, stop after

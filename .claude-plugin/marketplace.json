@@ -1,0 +1,16 @@
+{
+  "name": "security-audit-harness",
+  "owner": {
+    "name": "Thomas Rebaud"
+  },
+  "metadata": {
+    "description": "Security audit skills for coding agents."
+  },
+  "plugins": [
+    {
+      "name": "security",
+      "source": "./",
+      "description": "White-box security audits for large codebases: audit and scan skills with a SARIF baseline."
+    }
+  ]
+}

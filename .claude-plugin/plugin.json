@@ -1,0 +1,11 @@
+{
+  "name": "security",
+  "version": "0.1.0",
+  "description": "White-box security audits for large codebases: audit for one scope, scan to split a large one across parallel git worktrees. SARIF baseline across runs.",
+  "author": {
+    "name": "Thomas Rebaud"
+  },
+  "repository": "https://github.com/trebaud/security-audit-harness",
+  "license": "MIT",
+  "skills": "./.agents/skills/"
+}

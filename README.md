@@ -21,10 +21,10 @@ applies that at scale: it inventories every entry point and audits them in small
 
 | Component | Path | Role |
 |---|---|---|
-| `security-audit` skill | `.agents/skills/security-audit/` | Audits one scope: traces input to sink, proves reachability, has a critic subagent rate each candidate, writes a failing test per Critical/High. |
-| `scan` skill | `.agents/skills/scan/` | Splits a large scope into groups, runs `security-audit` per group in parallel worktrees, aggregates. |
-| SARIF tool | `.agents/skills/security-audit/scripts/sarif.mjs` | Validates runs, combines group runs, merges into the baseline. Node 18+, no dependencies. |
-| Rule list | `security/audit/rules.json` | Closed list of rule ids with CWE mapping. Edit it per project. |
+| `audit` skill | `.agents/skills/audit/` | Audits one scope: traces input to sink, proves reachability, has a critic subagent rate each candidate, writes a failing test per Critical/High. |
+| `scan` skill | `.agents/skills/scan/` | Splits a large scope into groups, runs `audit` per group in parallel worktrees, aggregates. |
+| SARIF tool | `.agents/skills/audit/scripts/sarif.mjs` | Validates runs, combines group runs, merges into the baseline. Node 18+, no dependencies. |
+| Rule list | `security/audit/rules.json` | Closed list of rule ids with CWE mapping. Seeded from the skill's `assets/rules.json` on the first run; edit it per project. |
 | Baseline | `security/audit/baseline.sarif` | Committed SARIF log, deduped on `<ruleId>\|<file>\|<symbol>`. Exploit details (`repro`, `flow`) are stripped from it. |
 | Threat model | `THREAT_MODEL.md` | Derived from the code on the first run if absent. Its out-of-scope table is the project's drop list. |
 
@@ -37,44 +37,61 @@ applies that at scale: it inventories every entry point and audits them in small
 
 ## Install
 
-```sh
-./install.sh /path/to/repo [--scope app] [--force]   # default scope: src
+Install the skills into your coding agent once; nothing is copied into the audited repo up front.
+
+**Claude Code.** In a Claude Code session:
+
+```
+/plugin marketplace add trebaud/security-audit-harness
+/plugin install security@security-audit-harness
 ```
 
-The installer copies both skills into `.agents/skills/` and `rules.json` into the target repo,
-links `.claude/skills/<name>` to them for Claude Code, creates `security/audit/`, and appends the
-scratch paths (`run.sarif`, `reports/`, `scan/`) to `.gitignore`. It never overwrites an existing
-file without `--force`, and never touches an existing `baseline.sarif` or `rules.json`.
+The skills load as `/security:audit` and `/security:scan`.
+
+**Codex, OpenCode and other Agent Skills clients.** With the [`skills`](https://skills.sh) CLI:
+
+```sh
+npx skills add trebaud/security-audit-harness          # into this repo's agent skill folders
+npx skills add trebaud/security-audit-harness -g       # user-level, for every repo
+```
+
+Add `-a <agent>` to pick the agent. Or copy `.agents/skills/audit/` and
+`.agents/skills/scan/` into the folder your agent reads skills from; keep them side by side.
+
+On its first run in a repo, the audit skill creates `security/audit/`, seeds
+`security/audit/rules.json` and appends the scratch paths (`run.sarif`, `reports/`, `scan/`) to
+`.gitignore`. It never overwrites an existing `rules.json` or `baseline.sarif`.
 
 ## Usage
 
 ### Agent support
 
-| Agent | Finds the skills in | Invoke | `scan` runs each group with |
+| Agent | Install | Invoke | `scan` runs each group with |
 |---|---|---|---|
-| Claude Code | `.claude/skills/` (linked) | `/security-audit src` | `claude -p`, tool allowlist |
-| Codex | `.agents/skills/` | `$security-audit src`, or name the skill | `codex exec --sandbox workspace-write` |
-| OpenCode | `.agents/skills/`, `.claude/skills/` | ask for the skill by name | `opencode run`, `OPENCODE_PERMISSION` allowlist |
-| Other | wherever it reads `SKILL.md` | ask for the skill by name | its own headless mode |
+| Claude Code | plugin | `/security:audit src` | `claude -p`, tool allowlist |
+| Codex | `npx skills add` | `$audit src`, or name the skill | `codex exec --sandbox workspace-write` |
+| OpenCode | `npx skills add` | ask for the skill by name | `opencode run`, `OPENCODE_PERMISSION` allowlist |
+| Other | `npx skills add`, or copy | ask for the skill by name | its own headless mode |
 
 The skills name no vendor tool. Where they need a subagent, a question to the user or a background
-command, they say what to do when the agent has none. Examples below use the Claude Code slash
-syntax; in other agents, ask for the skill with the same arguments.
+command, they say what to do when the agent has none. Examples below use the short slash syntax
+(`/audit`, `/scan`); in Claude Code add the plugin prefix (`/security:audit`),
+and in other agents ask for the skill with the same arguments.
 
 ### First run
 
 Pick one:
 
-- **Small or medium scope:** `/security-audit src --sarif`
+- **Small or medium scope:** `/audit src --sarif`
 - **Large scope:** `/scan src --sarif`
 
 Either derives `THREAT_MODEL.md` at the repo root if none exists. Review it with the code owner,
 then commit it together with `security/audit/baseline.sarif`.
 
-### `/security-audit`: one scope
+### `/audit`: one scope
 
 ```
-/security-audit <scope> [--sarif [--no-merge]]
+/audit <scope> [--sarif [--no-merge]]
 ```
 
 | Scope | Audits |
@@ -95,7 +112,7 @@ chain detection, a failing-on-vulnerable test for every Critical and High, and a
   Each baseline result is marked `new`, `unchanged`, `updated` or `absent`.
 - `--no-merge` stops after validation and leaves the baseline alone.
 
-Use it on PRs (`/security-audit pr#123`) to audit only what changed.
+Use it on PRs (`/audit pr#123`) to audit only what changed.
 
 ### `/scan`: a large codebase
 
@@ -118,9 +135,10 @@ does each phase itself with git, the shell and `sarif.mjs`.
    the group table before anything runs.
 3. **Worktrees.** One `git worktree` and branch `scan-<run-id>-<gNN>` per group, under
    `../<repo>.scan/<run-id>/` (or with [mori](https://github.com/trebaud/mori) when the repo has a
-   `.mori.json`, so its `post_create` setup runs), with the harness, the threat model and the group manifest copied
-   in, and dependencies installed so tests can run.
-4. **Run.** The CLI you ran `/scan` from runs the security-audit skill with `<group> --sarif
+   `.mori.json`, so its `post_create` setup runs), with the rule list, the threat model and the group manifest copied
+   in, and dependencies installed so tests can run. A user-level or plugin install of the skills
+   is visible from every worktree; a repo-level one is copied in too.
+4. **Run.** The CLI you ran `/scan` from runs the audit skill with `<group> --sarif
    --no-merge` in each worktree, headless, four at a time through `xargs -P 4`. A group
    is `done` only when the agent exits 0 and its `run.sarif` validates. The skill offers to rerun
    failed groups.

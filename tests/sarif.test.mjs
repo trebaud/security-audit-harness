@@ -16,8 +16,8 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
-const SCRIPT = path.join(ROOT, ".agents", "skills", "security-audit", "scripts", "sarif.mjs");
-const RULES_SEED = path.join(ROOT, "security", "audit", "rules.json");
+const SCRIPT = path.join(ROOT, ".agents", "skills", "audit", "scripts", "sarif.mjs");
+const RULES_SEED = path.join(ROOT, ".agents", "skills", "audit", "assets", "rules.json");
 
 const sarif = await import(SCRIPT);
 
@@ -376,17 +376,6 @@ describe("exploit details", () => {
     const original = result();
     sarif.withoutExploitDetails(original);
     assert.ok("repro" in original.properties);
-  });
-});
-
-describe("helpUri from CI", () => {
-  it("is null outside github actions", () => {
-    assert.equal(sarif.defaultHelpUri({}), null);
-  });
-
-  it("is derived from the actions environment", () => {
-    const uri = sarif.defaultHelpUri({ GITHUB_REPOSITORY: "acme/app", GITHUB_REF_NAME: "main" });
-    assert.equal(uri, "https://github.com/acme/app/tree/main/.agents/skills/security-audit");
   });
 });
 

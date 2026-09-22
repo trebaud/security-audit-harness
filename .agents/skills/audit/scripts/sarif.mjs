@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The security-audit SARIF tool: the closed rule list, validation and the
+ * The audit skill's SARIF tool: the closed rule list, validation and the
  * baseline merge. Node 18+ standard library only, so it runs before any
  * install step. It renders nothing for humans: the audit itself writes the
  * report.
@@ -96,7 +96,7 @@ export function loadRules(file = RULES_FILE) {
     text = fs.readFileSync(file, "utf-8");
   } catch (e) {
     if (e.code === "ENOENT") {
-      throw new SarifError(`${file}: does not exist (run from the repo root, or install the harness first)`);
+      throw new SarifError(`${file}: does not exist (run from the repo root; the audit skill seeds it on its first run)`);
     }
     throw new SarifError(`${file}: ${errorText(e)}`);
   }
@@ -490,18 +490,8 @@ function compare(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/**
- * Derive the rule helpUri from the CI environment when available: the skill
- * folder in the audited repository. null outside GitHub Actions.
- */
-export function defaultHelpUri(env = null) {
-  env = env === null ? process.env : env;
-  const repo = env.GITHUB_REPOSITORY;
-  if (!repo) return null;
-  const server = env.GITHUB_SERVER_URL || "https://github.com";
-  const ref = env.GITHUB_REF_NAME || "HEAD";
-  return `${server}/${repo}/tree/${ref}/.agents/skills/security-audit`;
-}
+/** The rule helpUri: the harness repository, where the skill is published. */
+export const HELP_URI = "https://github.com/trebaud/security-audit-harness";
 
 // ---------------------------------------------------------------------------
 
@@ -575,8 +565,8 @@ function cmdValidate(argv) {
  * pass finds nothing new and empties the run file.
  *
  * The merge stops on an invalid file and does not change the baseline. Rule
- * descriptors get a helpUri pointing at the skill folder when GITHUB_REPOSITORY
- * is set (i.e. in CI). See `merge` for the matching rules.
+ * descriptors get a helpUri pointing at the harness repository. See `merge`
+ * for the matching rules.
  */
 function cmdMerge(argv) {
   if (argv.length !== 1) {
@@ -588,7 +578,7 @@ function cmdMerge(argv) {
   const fresh = readValidSarif(file, rules);
   const baseline = fs.existsSync(BASELINE_FILE) ? readValidSarif(BASELINE_FILE, rules) : null;
 
-  const [doc, added] = merge(fresh, baseline, rules, { helpUri: defaultHelpUri() });
+  const [doc, added] = merge(fresh, baseline, rules, { helpUri: HELP_URI });
   assertValid(doc, rules, "merged output");
 
   const run = doc.runs[0];

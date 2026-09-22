@@ -56,8 +56,8 @@ splits one bug into two baseline entries, permanently, which is why it is checke
 ## Validate, then merge
 
 ```sh
-node .agents/skills/security-audit/scripts/sarif.mjs validate security/audit/run.sarif
-node .agents/skills/security-audit/scripts/sarif.mjs merge security/audit/run.sarif
+node <skill-dir>/scripts/sarif.mjs validate security/audit/run.sarif
+node <skill-dir>/scripts/sarif.mjs merge security/audit/run.sarif
 ```
 
 Run the validator. Fix each error in `security/audit/run.sarif`. Run the validator again until it prints `valid`.
