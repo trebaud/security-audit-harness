@@ -1,7 +1,8 @@
 # Security Audit Harness
 
 An agent harness for white-box security audits, built for codebases too large to audit in one
-session.
+session. It runs under any coding agent CLI: Claude Code, Codex, OpenCode, or any other that takes
+a prompt headless.
 
 A single agent session auditing a large repository runs out of context, samples the attack
 surface and skips entry points. This harness splits the audit into groups of entry points, runs
@@ -25,7 +26,8 @@ Inspired by the results presented by Vasilii Ermilov at BSides Montréal 2026
 
 ## Requirements
 
-- Claude Code (the `scan` skill runs each group with `claude -p`)
+- A coding agent CLI that loads [Agent Skills](https://agentskills.io) (`SKILL.md`): Claude Code,
+  Codex, OpenCode, or another. `scan` runs each group headless with it.
 - Node 18+
 - git
 - Optional: [mori](https://github.com/trebaud/mori) as the worktree backend (needs `go`; `scan`
@@ -37,12 +39,25 @@ Inspired by the results presented by Vasilii Ermilov at BSides Montréal 2026
 ./install.sh /path/to/repo [--scope app] [--force]   # default scope: src
 ```
 
-The installer copies both skills and `rules.json` into the target repo, creates
-`security/audit/`, and appends the scratch paths (`run.sarif`, `reports/`, `scan/`) to
-`.gitignore`. It never overwrites an existing file without `--force`, and never touches an
+The installer copies both skills into `.agents/skills/` and `rules.json` into the target repo,
+links `.claude/skills/<name>` to them for Claude Code, creates `security/audit/`, and appends the
+scratch paths (`run.sarif`, `reports/`, `scan/`) to `.gitignore`. It never overwrites an existing file without `--force`, and never touches an
 existing `baseline.sarif` or `rules.json`.
 
 ## Usage
+
+### Agent support
+
+| Agent | Finds the skills in | Invoke | `scan` runs each group with |
+|---|---|---|---|
+| Claude Code | `.claude/skills/` (linked) | `/security-audit src` | `claude -p`, tool allowlist |
+| Codex | `.agents/skills/` | `$security-audit src`, or name the skill | `codex exec --sandbox workspace-write` |
+| OpenCode | `.agents/skills/`, `.claude/skills/` | ask for the skill by name | `opencode run`, `OPENCODE_PERMISSION` allowlist |
+| Other | wherever it reads `SKILL.md` | ask for the skill by name | `SCAN_AGENT_CMD`, prompt appended |
+
+The skills name no vendor tool. Where they need a subagent, a question to the user or a background
+command, they say what to do when the agent has none. Examples below use the Claude Code slash
+syntax; in other agents, ask for the skill with the same arguments.
 
 ### First run
 
@@ -84,7 +99,7 @@ Use it on PRs (`/security-audit pr#123`) to audit only what changed.
 
 ```
 /scan [scope] [--by modules|endpoints|custom] [--size 25] [--parallel 4]
-      [--worktrees git|mori] [--sarif] [--resume <run-id>]
+      [--worktrees git|mori] [--agent claude|codex|opencode|custom] [--sarif] [--resume <run-id>]
 ```
 
 | Flag | Default | Effect |
@@ -93,6 +108,7 @@ Use it on PRs (`/security-audit pr#123`) to audit only what changed.
 | `--size N` | 25 | Entry points per group with `--by endpoints`. |
 | `--parallel N` | 4 | Concurrent group audits. Use 2 for a tight rate limit, 8 for a high one. |
 | `--worktrees` | asked | `git`: native worktrees under `../<repo>.scan/<run-id>/`. `mori`: worktrees under `~/.mori/worktrees/<repo>/`, runs `.mori.json` `post_create`. |
+| `--agent` | the current agent | CLI that runs each group headless. `custom` runs `SCAN_AGENT_CMD`. |
 | `--sarif` | off | Merge the combined findings into the baseline, once. |
 | `--resume <run-id>` | | Continue an interrupted scan at its first unfinished phase. |
 
@@ -105,9 +121,10 @@ Flags that are not given become questions. The scan runs in phases:
    You confirm or edit the group table before anything runs.
 3. **Worktrees.** One worktree and branch `scan-<run-id>-<gNN>` per group, with the harness, the
    threat model and the group manifest copied in, and dependencies installed so tests can run.
-4. **Run.** `claude -p` runs `/security-audit <group> --sarif --no-merge` in each worktree, in
-   the background, with a restricted tool allowlist. A group is `done` only when `claude` exits 0
-   and its `run.sarif` validates. Failed groups can be retried with `--retry-failed`.
+4. **Run.** The chosen agent runs the security-audit skill with `<group> --sarif --no-merge` in
+   each worktree, headless and in the background, under that agent's permission controls. A group
+   is `done` only when the agent exits 0 and its `run.sarif` validates. Failed groups can be
+   retried with `--retry-failed`.
 5. **Aggregate.** Combines every group's SARIF into `combined.sarif` (two groups hitting the same
    sink become one result), runs a critic pass for chains that cross groups, copies the new tests
    into the main tree without overwriting conflicts, merges into the baseline once with `--sarif`,
@@ -118,17 +135,26 @@ Examples:
 
 ```
 /scan src --by modules --sarif
-/scan src --by endpoints --size 20 --parallel 8 --worktrees git --sarif
+/scan src --by endpoints --size 20 --parallel 8 --worktrees git --agent codex --sarif
 /scan src --by custom
     > payments and refunds together, all /admin routes on their own, webhooks on their own
 /scan --resume 2026-09-22-1430
 ```
 
 If the repo runs tests with a command outside the default allowlist (npm, pnpm, yarn, bun, vitest,
-jest, mocha, `node --test`, go, pytest, cargo), pass it to the group audits:
+jest, mocha, `node --test`, go, pytest, cargo), pass it to the group audits as comma-separated
+command prefixes (used by `claude` and `opencode`; `codex` relies on its sandbox instead):
 
 ```sh
-SCAN_EXTRA_TOOLS="Bash(make test:*)"
+SCAN_EXTRA_TOOLS="make test,just check"
+```
+
+For an agent without a built-in adapter, set a command that takes the prompt as its last argument
+and pass `--agent custom`. It gets no permission rules from the scan, so pick the CLI's own
+headless-safe mode:
+
+```sh
+SCAN_AGENT_CMD="gemini --yolo -p"
 ```
 
 Run state lives in `security/audit/scan/<run-id>/` (gitignored): `inventory.json`, `plan.json`,
@@ -149,7 +175,7 @@ group manifests, logs (`logs/<gNN>.log`), per-group SARIF and reports. Every ste
 ## Development
 
 ```sh
-node --test tests/
+node --test tests/*.test.mjs
 ```
 
 ## License

@@ -229,8 +229,55 @@ describe("setupCommands", () => {
   });
 });
 
+describe("agentCommand", () => {
+  const prompt = "Run the security-audit skill with args: `src/a --sarif --no-merge`.";
+  const env = { SCAN_EXTRA_TOOLS: "make test, Bash(just check:*)" };
+
+  it("reads extra commands as prefixes or as Claude Code rules", () => {
+    assert.deepEqual(scan.extraCommands(env), ["make test", "just check"]);
+  });
+
+  it("builds a claude -p call with an allowlist", () => {
+    const { cmd, args } = scan.agentCommand("claude", prompt, { env, model: "opus" });
+    assert.equal(cmd, "claude");
+    assert.equal(args[args.indexOf("-p") + 1], prompt);
+    const tools = args[args.indexOf("--allowedTools") + 1].split(",");
+    assert.ok(tools.includes("Bash(make test:*)"));
+    assert.ok(tools.includes("Bash(node .agents/skills/security-audit/scripts/*)"));
+    assert.deepEqual(args.slice(-2), ["--model", "opus"]);
+  });
+
+  it("builds a codex exec call in the workspace-write sandbox, prompt last", () => {
+    const { cmd, args } = scan.agentCommand("codex", prompt, { env, model: "gpt-5" });
+    assert.equal(cmd, "codex");
+    assert.deepEqual(args, ["exec", "--sandbox", "workspace-write", "--model", "gpt-5", prompt]);
+  });
+
+  it("builds an opencode run call with permissions in the environment", () => {
+    const { cmd, args, env: extra } = scan.agentCommand("opencode", prompt, { env });
+    assert.equal(cmd, "opencode");
+    assert.deepEqual(args, ["run", prompt]);
+    const perm = JSON.parse(extra.OPENCODE_PERMISSION);
+    assert.equal(perm.bash["*"], "deny");
+    assert.equal(perm.bash["make test*"], "allow");
+    assert.equal(perm.webfetch, "deny");
+  });
+
+  it("runs SCAN_AGENT_CMD for custom, with the prompt appended", () => {
+    const { cmd, args, env: extra } = scan.agentCommand("custom", prompt, { env: { SCAN_AGENT_CMD: "gemini -p" } });
+    assert.equal(cmd, "sh");
+    assert.deepEqual(args, ["-c", 'gemini -p "$SCAN_PROMPT"']);
+    assert.equal(extra.SCAN_PROMPT, prompt);
+  });
+
+  it("rejects custom without SCAN_AGENT_CMD, and unknown agents", () => {
+    assert.throws(() => scan.agentCommand("custom", prompt, { env: {} }), /SCAN_AGENT_CMD/);
+    assert.throws(() => scan.agentCommand("cursor", prompt, { env: {} }), /unknown agent/);
+  });
+});
+
 describe("end to end, git backend", () => {
-  // A throwaway repo with the harness installed and a stub `claude` that writes
+  // A throwaway repo with the harness installed and a stub agent CLI that writes
   // one finding per group into the worktree it runs in.
   const cwd = process.cwd();
   const log = console.log;
@@ -268,7 +315,7 @@ describe("end to end, git backend", () => {
     fs.mkdirSync(bin);
     const stub = `#!/usr/bin/env node
 const fs = require("fs");
-const prompt = process.argv[process.argv.indexOf("-p") + 1];
+const prompt = process.argv.find((a) => a.includes("args: \`"));
 const scope = /args: \`(\\S+)/.exec(prompt)[1];
 const g = scope.startsWith("@") ? scope.replace(/.*\\/(g\\d+)\\.md$/, "$1") : scope.split("/").pop();
 if (!fs.existsSync("THREAT_MODEL.md")) process.exit(4);
@@ -284,7 +331,7 @@ fs.writeFileSync("security/audit/reports/" + g + "-2026-09-22.md", "# report " +
 fs.mkdirSync("test/security", { recursive: true });
 fs.writeFileSync("test/security/" + g + ".test.ts", "// " + g + "\\n");
 `;
-    fs.writeFileSync(path.join(bin, "claude"), stub, { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, "codex"), stub, { mode: 0o755 });
     process.env.PATH = `${bin}${path.delimiter}${envPath}`;
     process.chdir(repo);
     fs.mkdirSync(runDir, { recursive: true });
@@ -354,12 +401,18 @@ fs.writeFileSync("test/security/" + g + ".test.ts", "// " + g + "\\n");
     assert.deepEqual(scan.readPlan(runDir).groups.map((g) => g.worktree), before);
   });
 
-  it("runs every group", async () => {
-    assert.equal(await scan.main(["run", runDir, "--parallel", "2"]), 0);
-    assert.ok(scan.readPlan(runDir).groups.every((g) => g.status === "done"));
+  it("refuses to run without an agent", async () => {
+    assert.equal(await scan.main(["run", runDir]), 1);
   });
 
-  it("skips done groups on a second run", async () => {
+  it("runs every group", async () => {
+    assert.equal(await scan.main(["run", runDir, "--agent", "codex", "--parallel", "2"]), 0);
+    const plan = scan.readPlan(runDir);
+    assert.equal(plan.agent, "codex");
+    assert.ok(plan.groups.every((g) => g.status === "done"));
+  });
+
+  it("skips done groups on a second run, keeping the agent it started with", async () => {
     const before = scan.readPlan(runDir).groups.map((g) => g.finishedAt);
     assert.equal(await scan.main(["run", runDir]), 0);
     assert.deepEqual(scan.readPlan(runDir).groups.map((g) => g.finishedAt), before);

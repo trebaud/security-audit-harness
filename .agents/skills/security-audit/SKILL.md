@@ -7,15 +7,18 @@ allowed-tools: Read, Grep, Glob, Agent, Bash(gh pr diff:*), Bash(git diff:*), Ba
 
 # Security Audit
 
-White-box audit of **$ARGUMENTS** for IDOR, CSRF, SSRF, NoSQL/SQL injection, auth bypass, race
+White-box audit of the scope given in the arguments for IDOR, CSRF, SSRF, NoSQL/SQL injection, auth bypass, race
 conditions, business-logic errors, broken access control and other OWASP API Security Top 10.
 
 ## Arguments
 
-`$1` is the scope. `--sarif` (extra output) and `--no-merge` are flags, valid
-anywhere in `$ARGUMENTS` — strip them before reading `$1`.
+Arguments: `$ARGUMENTS`. If that shows a literal placeholder, the arguments are the text that
+followed the skill name in the request.
 
-| `$1` | Scope |
+The scope is the first argument that is not a flag. `--sarif` (extra output) and `--no-merge` are
+flags, valid anywhere in the arguments — strip them before reading the scope.
+
+| Scope argument | Audits |
 |---|---|
 | a directory path | that path, recursively |
 | a module name | that module and everything it exports |
@@ -23,6 +26,17 @@ anywhere in `$ARGUMENTS` — strip them before reading `$1`.
 | `main...HEAD` | that git diff |
 | `@path/to/group.md` | the entry points listed in that manifest, one per line as `METHOD /route — handler file:line` (or a worker/job/webhook name); trace each into whatever code it calls, shared code included, but enumerate no other entry point |
 | *(empty)* | `git diff <default-branch>...HEAD`; if empty, ask — do not audit the whole repo |
+
+## Terms
+
+The skill runs under any coding agent (Claude Code, Codex, OpenCode, …) and names no vendor tool:
+
+- **Subagent**: a worker with a fresh context that your agent can spawn (Claude Code's Agent tool,
+  Codex or OpenCode subagents). If you cannot spawn one, do its task yourself, one item at a time,
+  rereading the code from scratch for each item instead of reusing your earlier conclusions.
+- **Ask the user**: your structured-question tool if you have one, else a short numbered list of
+  choices in plain text; then wait. In a headless run nobody answers: stop and say what is needed.
+- **Search**: whatever file search you have (a glob or grep tool, `rg`, `find`).
 
 ## Output
 
@@ -32,14 +46,14 @@ validates `security/audit/run.sarif` and stops there: the caller (the `scan` ski
 several runs and merges once.
 
 When the scope is larger than one module, split it by subdirectory (one slice per feature folder,
-route group, worker area, …) and run steps 1–2 in one Agent subagent per slice, in parallel;
+route group, worker area, …) and run steps 1–2 in one subagent per slice, in parallel;
 steps 3 and 5 run once over the merged candidates.
 
 ## Workflow
 
 ### 0 — Precondition: a threat model exists
 
-Find the project's threat model: a `THREAT_MODEL.md` anywhere in the repo (`Glob **/THREAT_MODEL.md`,
+Find the project's threat model: a `THREAT_MODEL.md` anywhere in the repo (search `**/THREAT_MODEL.md`,
 outside `node_modules` and the skill's own `references/`), by default at the project root. If there is
 none, or it still holds the template's `<…>` placeholders, create it before anything else: take the shape of
 [references/THREAT_MODEL_TEMPLATE.md](references/THREAT_MODEL_TEMPLATE.md), fill every section from

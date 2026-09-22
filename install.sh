@@ -9,7 +9,10 @@
 #   .agents/skills/scan/                    (split audit across git worktrees)
 #   security/audit/rules.json
 #
-# each at the same path it has here. It also creates the audit's home,
+# each at the same path it has here. .agents/skills/ is where Codex, OpenCode and
+# other Agent Skills clients look; Claude Code reads .claude/skills/ only, so it
+# also links .claude/skills/<name> -> ../../.agents/skills/<name> for each skill.
+# It also creates the audit's home,
 # security/audit/ (with its gitignored reports/ subfolder), where the skill
 # writes run.sarif and baseline.sarif and where rules.json lives. It appends
 # the scratch paths to the repo's .gitignore.
@@ -112,6 +115,18 @@ copy_tree "$SKILL_SRC" "$SKILL_DEST/"
 copy_tree "$SCAN_SRC" "$SCAN_DEST/"
 copy "$HARNESS_ROOT/$AUDIT_DIR/rules.json" "$AUDIT_DIR/rules.json"
 
+# Claude Code discovery: a relative link, so it survives a clone and resolves in a worktree.
+for name in security-audit scan; do
+    link=".claude/skills/$name"
+    if [ -e "$target/$link" ] || [ -L "$target/$link" ]; then
+        skipped+=("$link")
+        continue
+    fi
+    mkdir -p -- "$target/.claude/skills"
+    ln -s "../../.agents/skills/$name" "$target/$link"
+    written+=("$link -> .agents/skills/$name")
+done
+
 gitignore="$target/.gitignore"
 if [ -f "$gitignore" ] && grep -qF "$AUDIT_DIR/run.sarif" "$gitignore"; then
     if grep -qF "$AUDIT_DIR/scan/" "$gitignore"; then
@@ -141,8 +156,9 @@ for f in ${skipped[@]+"${skipped[@]}"}; do printf '  = %s (kept)\n' "$f"; done
 cat <<EOF
 
 Installed into $target. Next:
-  1. Run it locally once: in Claude Code, \`/security-audit $scope --sarif\`. The skill derives
+  1. Run it locally once, from your coding agent (Claude Code, Codex, OpenCode, ...): the
+     security-audit skill with \`$scope --sarif\` (\`/security-audit $scope --sarif\` in Claude Code). The skill derives
      THREAT_MODEL.md at the repo root if it finds none; review it, then commit it with $AUDIT_DIR/baseline.sarif.
-  2. For a codebase too large for one session: \`/scan $scope --sarif\` splits the audit by module or by
+  2. For a codebase too large for one session: the scan skill with \`$scope --sarif\` splits the audit by module or by
      endpoint group, one git worktree per group, and aggregates one report.
 EOF
