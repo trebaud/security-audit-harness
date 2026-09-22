@@ -1,8 +1,6 @@
 # Security Audit Harness
 
-An agent harness for white-box security audits, built for codebases too large to audit in one
-session. It runs under any coding agent CLI: Claude Code, Codex, OpenCode, or any other that takes
-a prompt headless.
+An agent harness for white-box security audits, optimized for large codebases.
 
 A single agent session auditing a large repository runs out of context, samples the attack
 surface and skips entry points. This harness splits the audit into groups of entry points, runs
