@@ -2,7 +2,7 @@
 name: security-audit
 disable-model-invocation: true
 description: White-box security audit of this repo's own code — a path, module, PR, or branch diff — for backends, frontends and full-stack apps (IDOR, access control, auth bypass, CSRF, SSRF, injection, race conditions, business logic, XSS, open redirects, postMessage trust, token and secret exposure). Builds a THREAT_MODEL.md with the user when the repo has none, then traces input to sink, proves reachability, has a critic challenge each candidate, and confirms Critical/High with a failing test. Use for a security review, audit, or vuln hunt of application code, a PR security check, or to create a threat model. Trigger on phrasings like "security audit this repo", "security review this PR", "audit src/payments for vulns", "is this endpoint exploitable", "look for IDOR / XSS / injection here", "threat model this repo". Not for CI workflows, third-party skills or plugins, dependency CVEs, or agent config.
-argument-hint: "<scope: path | module | pr#NUMBER | git-ref | @manifest>"
+argument-hint: "<scope: path | module | E-id | pr#NUMBER | git-ref | @manifest>"
 allowed-tools: Read, Grep, Glob, Agent, Write, Edit, Bash, AskUserQuestion
 ---
 
@@ -18,6 +18,7 @@ Arguments: `$ARGUMENTS`.
 | Scope | Audits |
 |---|---|
 | path or module | that code, recursively |
+| `e2`, `e2-<name>` | threat-model entry point E2: its sources, traced into whatever they call |
 | `pr#123` | `gh pr diff 123` |
 | `main...HEAD` | that git diff |
 | `@path/to/group.md` | only the entry points listed in that manifest (one per line), traced into whatever they call |

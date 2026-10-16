@@ -1,5 +1,5 @@
 {
-  "name": "security-audit-runner",
+  "name": "security-audit-harness",
   "version": "0.1.0",
-  "description": "White-box security audit skill, run per target in parallel worktrees by run.sh."
+  "description": "White-box security audit skill, run per target in parallel worktrees by audit.sh."
 }
