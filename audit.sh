@@ -440,14 +440,13 @@ run_model() {
 }
 
 # Prints the run's name, elapsed time, total cost, model and effort, and a progress bar that
-# stacks done, failed and running targets.
+# fills with done and failed targets only, so it never shows progress before a target finishes.
 print_header() {
   local finished=$((n_done + n_failed)) bar counts
-  bar=$(awk -v n="$n" -v d="$n_done" -v f="$n_failed" -v r="$n_running" \
-    -v G="$G" -v R="$R" -v Y="$Y" -v D="$D" -v X="$X" '
+  bar=$(awk -v n="$n" -v d="$n_done" -v f="$n_failed" -v G="$G" -v R="$R" -v D="$D" -v X="$X" '
     function seg(k, c, ch,   s, i) { for (i = 0; i < k; i++) s = s ch; return k > 0 ? c s X : "" }
-    BEGIN { w = 30; d = n ? int(w * d / n) : 0; f = n ? int(w * f / n) : 0; r = n ? int(w * r / n) : 0
-      printf "%s%s%s%s", seg(d, G, "━"), seg(f, R, "━"), seg(r, Y, "━"), seg(w - d - f - r, D, "─") }')
+    BEGIN { w = 30; d = n ? int(w * d / n) : 0; f = n ? int(w * f / n) : 0
+      printf "%s%s%s", seg(d, G, "━"), seg(f, R, "━"), seg(w - d - f, D, "─") }')
   counts="${G}✓ $n_done done$X"
   [ "$n_running" -gt 0 ] && counts="$counts  ${Y}● $n_running running$X"
   [ "$n_failed" -gt 0 ] && counts="$counts  ${R}✗ $n_failed failed$X"
