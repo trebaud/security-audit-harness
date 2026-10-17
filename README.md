@@ -144,3 +144,7 @@ The skill only runs when invoked by name; Claude won't start an audit on its own
   tests and run them in their worktree without asking. Only audit code you are willing to run.
 - **Findings.** Each one is traced, challenged by a critic and, at Critical or High, confirmed by a
   test, but it is still model output. Review it before acting on it.
+
+## License
+
+[MIT](LICENSE)
