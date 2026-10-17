@@ -501,7 +501,7 @@ watch_until() {
     else
       printf '%s\n\n' "$screen"
     fi
-    sleep "${REFRESH:-10}" & wait $! || true
+    sleep "${REFRESH:-2}" & wait $! || true
   done
   wait "$pid" || true
 }
