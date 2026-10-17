@@ -429,7 +429,14 @@ describe() {
   fi
 }
 
-# Prints the run's elapsed time, total cost, and a progress bar with counts per state.
+# Prints the model the sessions run on, as claude resolved it once one has started, else as asked for.
+run_model() {
+  local transcripts=("$OUT"/*.jsonl) resolved
+  [ ${#transcripts[@]} -gt 0 ] && resolved=$(grep -m1 '"subtype":"init"' "${transcripts[0]}" | jq -r '.model // empty')
+  echo "${resolved:-${MODEL:-default model}}"
+}
+
+# Prints the run's model, effort, elapsed time, total cost, and a progress bar with counts per state.
 print_header() {
   local finished=$((n_done + n_failed)) bar counts
   bar=$(awk -v f="$finished" -v n="$n" 'BEGIN { w = 24; k = n ? int(w * f / n) : 0
@@ -438,8 +445,8 @@ print_header() {
   [ "$n_running" -gt 0 ] && counts="$counts  ${Y}● $n_running running$X"
   [ "$n_failed" -gt 0 ] && counts="$counts  ${R}✗ $n_failed failed$X"
   [ "$n_waiting" -gt 0 ] && counts="$counts  ${D}○ $n_waiting waiting$X"
-  printf "${B}Security audit %s$X  ${D}%s elapsed · %s$X  ${B}total %s\$%.2f$X\n" \
-    "$RUN" "$(clock "$(since "$OUT/run.start" "$OUT/run.end" 2>/dev/null || echo 0)")" "$(date +%T)" "$approx" "$total"
+  printf "${B}Security audit %s$X  ${D}%s · %s effort · %s elapsed · %s$X  ${B}total %s\$%.2f$X\n" \
+    "$RUN" "$(run_model)" "${EFFORT:-default}" "$(clock "$(since "$OUT/run.start" "$OUT/run.end" 2>/dev/null || echo 0)")" "$(date +%T)" "$approx" "$total"
   printf "$G%s$X %d/%d  %s\n\n" "$bar" "$finished" "$n" "$counts"
 }
 
