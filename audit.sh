@@ -459,17 +459,21 @@ print_events() {
 dashboard() (
   set +eu
   shopt -s nullglob
-  # On a terminal, the last column gets the width left after the 82 columns before it.
+  names=$(cat "$OUT/targets"; [ -f "$OUT/summary.state" ] && echo summary)
+  # The target column fits the longest name.
+  name_width=6
+  for target in $names; do [ ${#target} -gt "$name_width" ] && name_width=${#target}; done
+  # On a terminal, the last column gets the width left after the columns before it.
   width=1000
   if [ -n "$color" ]; then
-    width=$(( ${COLUMNS:-$(tput cols 2>/dev/null || echo 160)} - 82 ))
+    width=$(( ${COLUMNS:-$(tput cols 2>/dev/null || echo 160)} - name_width - 54 ))
     [ "$width" -lt 20 ] && width=20
   else
     B="" C="" D="" G="" R="" Y="" X=""
   fi
 
   rows="" total=0 approx="" n=0 n_done=0 n_failed=0 n_running=0 n_waiting=0
-  for target in $(cat "$OUT/targets") $([ -f "$OUT/summary.state" ] && echo summary); do
+  for target in $names; do
     state=$(cat "$OUT/$target.state" 2>/dev/null || echo pending)
     agents="" tin=0 tout=0 cost="" cost_color=""
     n=$((n + 1))
@@ -477,12 +481,12 @@ dashboard() (
     time=$(run_time "$target" "$state")
     [ -f "$OUT/$target.session" ] && read_session "$target"
     describe "$target" "$state"
-    rows+=$(printf "%-28s $state_color%s %-8s$X %7s %6s %7s %6s $cost_color%9s$X  $info_color%s$X" \
-      "$target" "$icon" "$state" "$time" "$agents" "$(human "$tin")" "$(human "$tout")" "$cost" "${info:0:$width}")$'\n'
+    rows+=$(printf "%-*s $state_color%s %-8s$X %7s %6s %7s %6s $cost_color%9s$X  $info_color%s$X" \
+      "$name_width" "$target" "$icon" "$state" "$time" "$agents" "$(human "$tin")" "$(human "$tout")" "$cost" "${info:0:$width}")$'\n'
   done
 
   print_header
-  printf "$D%-28s   %-8s %7s %6s %7s %6s %9s  %s$X\n" TARGET STATE TIME AGENTS IN OUT COST 'FINDINGS / LAST TOOL'
+  printf "$D%-*s   %-8s %7s %6s %7s %6s %9s  %s$X\n" "$name_width" TARGET STATE TIME AGENTS IN OUT COST 'FINDINGS / LAST TOOL'
   printf '%s' "$rows"
   echo
   print_events
