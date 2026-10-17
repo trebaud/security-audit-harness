@@ -403,10 +403,10 @@ read_session() {
 }
 
 # Sets info to what a target is up to: its failure, its top finding once it has a report, else
-# its last tool call.
+# its last tool call; and info_width to the characters that fit in its column.
 describe() {
   local target=$1 state=$2 reports tool
-  info="" info_color=$D
+  info="" info_color=$D info_width=$width
   if [ "$state" = failed ]; then
     info="see $target.err, $target.jsonl" info_color=$R
     return
@@ -419,6 +419,8 @@ describe() {
   if [ ${#reports[@]} -gt 0 ]; then
     info=$(grep -m1 -E '🔴|🟠|🟡|⚪|No .*findings' "${reports[${#reports[@]} - 1]}" | sed 's/\*\*//g')
     info=${info:-report written} info_color=""
+    # Severity glyphs take two columns each.
+    info_width=$((width - $(grep -o -E '🔴|🟠|🟡|⚪' <<<"$info" | wc -l)))
     return
   fi
   [ -f "$OUT/$target.session" ] || return
@@ -505,8 +507,9 @@ dashboard() (
     time=$(run_time "$target" "$state")
     [ -f "$OUT/$target.session" ] && read_session "$target"
     describe "$target" "$state"
+    [ ${#info} -gt "$info_width" ] && info="${info:0:$((info_width - 1))}…"
     rows+=$(printf " $state_color%s$X $name_color%-*s$X  $state_color%-8s$X %6s %6s %6s %6s $cost_color%8s$X  $info_color%s$X" \
-      "$icon" "$name_width" "$target" "$state" "$time" "$agents" "$(human "$tin")" "$(human "$tout")" "$cost" "${info:0:$width}")$'\n'
+      "$icon" "$name_width" "$target" "$state" "$time" "$agents" "$(human "$tin")" "$(human "$tout")" "$cost" "$info")$'\n'
   done
 
   print_header
