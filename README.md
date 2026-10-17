@@ -30,7 +30,6 @@ claude --plugin-dir ~/Code/security-audit-harness "/security-audit-harness:secur
   --id 20261017 \
   --model opus \
   --effort high
-./status.sh [run]   # the dashboard, from another terminal
 ```
 
 | Flag | Default | |
