@@ -354,20 +354,21 @@ TOKEN_USAGE='
   | (if length == 0 then [[0, 0, 0]] else . end) | transpose | map(add) | "\(.[0]) \(.[1]) \(.[2])"'
 
 LAST_TOOL='.message.content[]? | select(.type == "tool_use")
-  | "\(.name) \(.input.description // .input.pattern // .input.file_path // .input.command // ""
+  | "\(.name) › \(.input.description // .input.pattern // .input.file_path // .input.command // ""
     | tostring | gsub("\n"; " ") | sub("^.*/sec-audit-[^/]+/"; ""))"'
 
 human() { awk -v n="$1" 'BEGIN { if (n >= 1e6) printf "%.1fM", n / 1e6; else if (n >= 1e3) printf "%.0fk", n / 1e3; else if (n > 0) printf "%d", n }'; }
 clock() { printf '%d:%02d' $(($1 / 60)) $(($1 % 60)); }
 since() { echo $(( $(cat "$2" 2>/dev/null || date +%s) - $(cat "$1") )); }
 
-# Sets icon and color for a state, and counts it.
+# Sets icon and colors for a state, and counts it. Running targets stand out, waiting ones fade.
 classify_state() {
+  name_color=""
   case $1 in
     done) icon="✓" state_color=$G n_done=$((n_done + 1)) ;;
     failed) icon="✗" state_color=$R n_failed=$((n_failed + 1)) ;;
-    running) icon="●" state_color=$Y n_running=$((n_running + 1)) ;;
-    *) icon="○" state_color=$D n_waiting=$((n_waiting + 1)) ;;
+    running) icon="●" state_color=$Y name_color=$B n_running=$((n_running + 1)) ;;
+    *) icon="○" state_color=$D name_color=$D n_waiting=$((n_waiting + 1)) ;;
   esac
 }
 
@@ -425,7 +426,7 @@ describe() {
   # A tool call is cut from the left, keeping the tool name and the end of its path or pattern.
   if [ "$state" = running ] && [ ${#info} -gt "$width" ]; then
     tool=${info%% *}
-    info="$tool …${info: -$((width - ${#tool} - 2))}"
+    info="$tool › …${info: -$((width - ${#tool} - 4))}"
   fi
 }
 
@@ -436,25 +437,39 @@ run_model() {
   echo "${resolved:-${MODEL:-default model}}"
 }
 
-# Prints the run's model, effort, elapsed time, total cost, and a progress bar with counts per state.
+# Prints the run's name, elapsed time, total cost, model and effort, and a progress bar that
+# stacks done, failed and running targets.
 print_header() {
   local finished=$((n_done + n_failed)) bar counts
-  bar=$(awk -v f="$finished" -v n="$n" 'BEGIN { w = 24; k = n ? int(w * f / n) : 0
-    for (i = 0; i < w; i++) printf (i < k ? "█" : "░") }')
+  bar=$(awk -v n="$n" -v d="$n_done" -v f="$n_failed" -v r="$n_running" \
+    -v G="$G" -v R="$R" -v Y="$Y" -v D="$D" -v X="$X" '
+    function seg(k, c, ch,   s, i) { for (i = 0; i < k; i++) s = s ch; return k > 0 ? c s X : "" }
+    BEGIN { w = 30; d = n ? int(w * d / n) : 0; f = n ? int(w * f / n) : 0; r = n ? int(w * r / n) : 0
+      printf "%s%s%s%s", seg(d, G, "━"), seg(f, R, "━"), seg(r, Y, "━"), seg(w - d - f - r, D, "─") }')
   counts="${G}✓ $n_done done$X"
   [ "$n_running" -gt 0 ] && counts="$counts  ${Y}● $n_running running$X"
   [ "$n_failed" -gt 0 ] && counts="$counts  ${R}✗ $n_failed failed$X"
   [ "$n_waiting" -gt 0 ] && counts="$counts  ${D}○ $n_waiting waiting$X"
-  printf "${B}Security audit %s$X  ${D}%s · %s effort · %s elapsed · %s$X  ${B}total %s\$%.2f$X\n" \
-    "$RUN" "$(run_model)" "${EFFORT:-default}" "$(clock "$(since "$OUT/run.start" "$OUT/run.end" 2>/dev/null || echo 0)")" "$(date +%T)" "$approx" "$total"
-  printf "$G%s$X %d/%d  %s\n\n" "$bar" "$finished" "$n" "$counts"
+  printf "🔐 ${B}Security audit$X  ${C}%s$X   ⏳ %s   💰 ${B}%s\$%.2f$X\n" \
+    "$RUN" "$(clock "$(since "$OUT/run.start" "$OUT/run.end" 2>/dev/null || echo 0)")" "$approx" "$total"
+  printf "   $D%s · %s effort · %s$X\n" "$(run_model)" "${EFFORT:-default}" "$(date +%T)"
+  printf "   %s  ${B}%d/%d$X   %s\n\n" "$bar" "$finished" "$n" "$counts"
 }
 
-# Prints the last events, colored by kind: + done, ! failed, > started.
+# Prints the last events, tagged by kind: + done, ! failed, > started, = skipped.
 print_events() {
+  local line text glyph c
   tail -n 8 "$OUT/events.log" 2>/dev/null | while IFS= read -r line; do
-    case ${line:9:1} in "+") c=$G ;; "!") c=$R ;; ">") c=$C ;; *) c=$D ;; esac
-    printf "$D%s$X $c%s$X\n" "${line:0:8}" "${line:9}"
+    text=${line:11}
+    case ${line:9:1} in
+      "+") glyph="✓" c=$G ;;
+      "!") glyph="✗" c=$R ;;
+      ">") glyph="▸" c=$C ;;
+      "=") glyph="✓" c=$D ;;
+      " ") glyph="·" c=$D ;;
+      *) glyph="·" c=$D text=${line:9} ;;
+    esac
+    printf "   $D%s$X  $c%s %s$X\n" "${line:0:8}" "$glyph" "$text"
   done
 }
 
@@ -470,11 +485,13 @@ dashboard() (
   # The target column fits the longest name.
   name_width=6
   for target in $names; do [ ${#target} -gt "$name_width" ] && name_width=${#target}; done
-  # On a terminal, the last column gets the width left after the columns before it.
-  width=1000
+  # On a terminal, the last column gets the width left after the columns before it, and the rule
+  # under the column names spans the screen.
+  width=1000 rule_width=$((name_width + 57))
   if [ -n "$color" ]; then
-    width=$(( ${COLUMNS:-$(tput cols 2>/dev/null || echo 160)} - name_width - 54 ))
+    width=$(( ${COLUMNS:-$(tput cols 2>/dev/null || echo 160)} - name_width - 52 ))
     [ "$width" -lt 20 ] && width=20
+    rule_width=$((name_width + 49 + width))
   else
     B="" C="" D="" G="" R="" Y="" X=""
   fi
@@ -488,12 +505,13 @@ dashboard() (
     time=$(run_time "$target" "$state")
     [ -f "$OUT/$target.session" ] && read_session "$target"
     describe "$target" "$state"
-    rows+=$(printf "%-*s $state_color%s %-8s$X %7s %6s %7s %6s $cost_color%9s$X  $info_color%s$X" \
-      "$name_width" "$target" "$icon" "$state" "$time" "$agents" "$(human "$tin")" "$(human "$tout")" "$cost" "${info:0:$width}")$'\n'
+    rows+=$(printf " $state_color%s$X $name_color%-*s$X  $state_color%-8s$X %6s %6s %6s %6s $cost_color%8s$X  $info_color%s$X" \
+      "$icon" "$name_width" "$target" "$state" "$time" "$agents" "$(human "$tin")" "$(human "$tout")" "$cost" "${info:0:$width}")$'\n'
   done
 
   print_header
-  printf "$D%-*s   %-8s %7s %6s %7s %6s %9s  %s$X\n" "$name_width" TARGET STATE TIME AGENTS IN OUT COST 'FINDINGS / LAST TOOL'
+  printf "   $D%-*s  %-8s %6s %6s %6s %6s %8s  %s$X\n" "$name_width" TARGET STATE TIME AGENTS IN OUT COST ACTIVITY
+  printf "   $D%s$X\n" "$(printf '%*s' "$rule_width" '' | sed 's/ /─/g')"
   printf '%s' "$rows"
   echo
   print_events
@@ -504,7 +522,7 @@ dashboard() (
 # every REFRESH.
 watch_until() {
   local pid=$1 screen
-  local hint="${D}Ctrl-C stops every audit · logs: $(short "$OUT")/$X"
+  local hint="   ${D}Ctrl-C stops every audit · logs: $(short "$OUT")/$X"
   while kill -0 "$pid" 2>/dev/null; do
     screen=$(dashboard) || true
     if [ -t 1 ]; then
@@ -545,15 +563,15 @@ print_result() {
   dashboard
   echo
   if [ -n "$summary" ]; then
-    echo "${B}${G}Summary${X}       $(short "$summary")"
+    echo "📄 ${B}${G}Summary${X}       $(short "$summary")"
   else
-    echo "${B}${R}No summary${X}    see $(short "$OUT")/events.log"
+    echo "❌ ${B}${R}No summary${X}    see $(short "$OUT")/events.log"
   fi
   if [ -n "$failed" ]; then
-    echo "${B}${Y}Retry failed${X}  $(short "$HERE")/$(basename "$0") -r $(short "$repo") -i $ID${MODEL:+ -m $MODEL}${EFFORT:+ -e $EFFORT} -t $failed"
+    echo "🔁 ${B}${Y}Retry failed${X}  $(short "$HERE")/$(basename "$0") -r $(short "$repo") -i $ID${MODEL:+ -m $MODEL}${EFFORT:+ -e $EFFORT} -t $failed"
   fi
-  echo "${D}Clean up      worktrees keep the tests the audits wrote; remove them with:"
-  echo "              cd $(short "$repo") && mori list --json | jq -r '.[].branch | select(startswith(\"sec-audit-$ID-\"))' | xargs -I{} mori rm {} -f$X"
+  echo "🧹 ${D}Clean up      worktrees keep the tests the audits wrote; remove them with:"
+  echo "                 cd $(short "$repo") && mori list --json | jq -r '.[].branch | select(startswith(\"sec-audit-$ID-\"))' | xargs -I{} mori rm {} -f$X"
 }
 
 # ---- Main -----------------------------------------------------------------------------------------
