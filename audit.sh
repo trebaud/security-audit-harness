@@ -205,12 +205,21 @@ log() { echo "$(date +%T) $*" >>"$OUT/events.log"; }
 set_state() { echo "$2" >"$OUT/$1.state"; }
 has_report() { ls "$OUT/$1"-2???-??-??.md >/dev/null 2>&1; }
 
+# Deletes branch $1 when it has no worktree and no commits past the base branch. An interrupted
+# `mori new` leaves such a branch behind, and `mori new` then refuses to reuse its name.
+drop_orphan_branch() {
+  git rev-parse --verify --quiet "refs/heads/$1" >/dev/null || return 0
+  git merge-base --is-ancestor "$1" "$(base_branch)" || return 0
+  git branch -D "$1" >/dev/null 2>&1 || true
+}
+
 # Prints the worktree of sec-audit-<ID>-<name>, creating it first if needed.
 worktree_path() {
   local name=$1 branch="sec-audit-$ID-$1"
   if ! mori path "$branch" >/dev/null 2>&1; then
     set_state "$name" setup
     log "  $name creating worktree"
+    drop_orphan_branch "$branch"
     if ! mori new "$branch" >"$OUT/$name.setup.log" 2>&1; then
       set_state "$name" failed
       log "! $name worktree creation failed, see $name.setup.log"
