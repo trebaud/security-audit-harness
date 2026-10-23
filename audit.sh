@@ -246,17 +246,21 @@ queue_targets() {
 }
 
 # Runs claude headless in a worktree, tracks it under $OUT/<name>.* and copies back the report it
-# writes to .security-audit/<name>-<date>.md.
+# writes to .security-audit/<name>-<date>.md. The skill reports its progress to the file
+# $AUDIT_PROGRESS names, kept in the worktree, where the session may write.
 run_claude() {
-  local name=$1 dir=$2 prompt=$3 sid code=0 cost
+  local name=$1 dir=$2 prompt=$3 sid code=0 cost progress="$2/.security-audit/progress.json"
   sid=$(uuidgen | tr '[:upper:]' '[:lower:]')
   echo "$sid" >"$OUT/$name.session"
   date +%s >"$OUT/$name.start"
   rm -f "$OUT/$name.end"
+  mkdir -p "$dir/.security-audit"
+  rm -f "$progress"
+  echo "$progress" >"$OUT/$name.progress"
   set_state "$name" running
   log "> $name started (session $sid)"
 
-  (cd "$dir" && claude -p "$prompt" --plugin-dir "$HERE" \
+  (cd "$dir" && AUDIT_PROGRESS=$progress claude -p "$prompt" --plugin-dir "$HERE" \
     ${MODEL:+--model "$MODEL"} ${EFFORT:+--effort "$EFFORT"} \
     --session-id "$sid" --permission-mode auto --output-format stream-json --verbose </dev/null) \
     >"$OUT/$name.jsonl" 2>"$OUT/$name.err" || code=$?
@@ -362,13 +366,36 @@ TOKEN_USAGE='
          + ($u.cache_creation.ephemeral_1h_input_tokens // $u.cache_creation_input_tokens // 0) * $i * 2 ) / 1e6 ]]
   | (if length == 0 then [[0, 0, 0]] else . end) | transpose | map(add) | "\(.[0]) \(.[1]) \(.[2])"'
 
-LAST_TOOL='.message.content[]? | select(.type == "tool_use")
-  | "\(.name) › \(.input.description // .input.pattern // .input.file_path // .input.command // ""
-    | tostring | gsub("\n"; " ") | sub("^.*/sec-audit-[^/]+/"; ""))"'
+# Prints the percent done and the step from a progress file the skill writes. Each phase owns a
+# band of the percent; the share of its slices, candidates or tests done moves it within the band.
+PROGRESS='. as $p
+  | {orient: [0, 10], trace: [10, 50], critic: [50, 75], test: [75, 95], report: [95, 100]}[$p.phase] // [0, 0]
+  | (.[0] + (.[1] - .[0]) * (if $p.total > 0 then [$p.done / $p.total, 1] | min else 0 end) | floor)
+  | "\(.) \($p.phase)\(if $p.total > 0 then " \($p.done)/\($p.total)" else "" end)"'
+
+# A running session that writes nothing for this long is flagged as possibly stuck.
+QUIET_LIMIT=300
 
 human() { awk -v n="$1" 'BEGIN { if (n >= 1e6) printf "%.1fM", n / 1e6; else if (n >= 1e3) printf "%.0fk", n / 1e3; else if (n > 0) printf "%d", n }'; }
 clock() { printf '%d:%02d' $(($1 / 60)) $(($1 % 60)); }
 since() { echo $(( $(cat "$2" 2>/dev/null || date +%s) - $(cat "$1") )); }
+duration() { if [ "$1" -lt 60 ]; then echo "${1}s"; elif [ "$1" -lt 3600 ]; then echo "$(($1 / 60))m"; else echo "$(($1 / 3600))h"; fi; }
+
+# Prints a bar $1 characters wide for a total of $2: each count and color pair after them fills
+# its share in that color, and dim dashes fill the rest.
+bar() {
+  local width=$1 total=$2 used=0 k fill
+  shift 2
+  while [ $# -ge 2 ]; do
+    k=$((total > 0 ? width * $1 / total : 0))
+    fill=$(printf '%*s' "$k" '')
+    [ "$k" -gt 0 ] && printf '%s%s%s' "$2" "${fill// /━}" "$X"
+    used=$((used + k))
+    shift 2
+  done
+  fill=$(printf '%*s' $((width - used)) '')
+  printf '%s%s%s' "$D" "${fill// /─}" "$X"
+}
 
 # Sets icon and colors for a state, and counts it. Running targets stand out, waiting ones fade.
 classify_state() {
@@ -390,14 +417,17 @@ run_time() {
   clock "$(since "$OUT/$target.start" "$OUT/$target.end")"
 }
 
-# Sets subagents, tokens and cost from a target's claude session, and adds the cost to the total.
+# Sets subagents, tokens and cost from a target's claude session, and adds the cost to the total;
+# and quiet to the seconds since the session or any of its subagents last wrote anything.
 read_session() {
-  local target=$1 sid est final subagents
+  local target=$1 sid est final subagents latest
   sid=$(cat "$OUT/$target.session")
   subagents=(~/.claude/projects/*/"$sid"/subagents/*.jsonl)
   agents=${#subagents[@]}
   read -r tin tout est < <(cat ~/.claude/projects/*/"$sid".jsonl "${subagents[@]}" /dev/null \
     | grep -h '"type":"assistant"' | jq -rn "$TOKEN_USAGE")
+  latest=$(ls -t "$OUT/$target.jsonl" ~/.claude/projects/*/"$sid".jsonl "${subagents[@]}" 2>/dev/null | head -1)
+  [ -n "$latest" ] && quiet=$(($(date +%s) - $(date -r "$latest" +%s)))
   # A session can emit a result before its background subagents finish; only the last one, once
   # the session has ended, is the total.
   if [ -f "$OUT/$target.end" ]; then
@@ -412,10 +442,10 @@ read_session() {
 }
 
 # Sets info to what a target is up to: its failure, its top finding once it has a report, else
-# its last tool call; and info_width to the characters that fit in its column.
+# its progress, after a bar in meter; and info_width to the characters that fit after the meter.
 describe() {
-  local target=$1 state=$2 reports tool
-  info="" info_color=$D info_width=$width
+  local target=$1 state=$2 reports pct step
+  info="" info_color=$D info_width=$width meter=""
   if [ "$state" = failed ]; then
     info="see $target.err, $target.jsonl" info_color=$R
     return
@@ -432,12 +462,20 @@ describe() {
     info_width=$((width - $(grep -o -E '🔴|🟠|🟡|⚪' <<<"$info" | wc -l)))
     return
   fi
-  [ -f "$OUT/$target.session" ] || return
-  info=$(tail -n 200 "$OUT/$target.jsonl" | grep '"type":"assistant"' | jq -r "$LAST_TOOL" 2>/dev/null | tail -1)
-  # A tool call is cut from the left, keeping the tool name and the end of its path or pattern.
-  if [ "$state" = running ] && [ ${#info} -gt "$width" ]; then
-    tool=${info%% *}
-    info="$tool › …${info: -$((width - ${#tool} - 4))}"
+  [ "$state" = running ] || return
+  read -r pct step < <(jq -r "$PROGRESS" "$(cat "$OUT/$target.progress" 2>/dev/null)" 2>/dev/null)
+  if [ -n "$pct" ]; then
+    meter="$(bar 20 100 "$pct" "$Y") $B$(printf '%3d%%' "$pct")$X  "
+    info_width=$((width - 27))
+  fi
+  # The summary session merges reports without the skill, so it reports no progress.
+  [ "$target" = summary ] && step="merging reports"
+  info="${step:-no progress reported}"
+  [ -n "$quiet" ] || return
+  if [ "$quiet" -ge "$QUIET_LIMIT" ]; then
+    info="$info · quiet for $(duration "$quiet")" info_color=$R
+  else
+    info="$info · $(duration "$quiet") ago"
   fi
 }
 
@@ -451,11 +489,7 @@ run_model() {
 # Prints the run's name, elapsed time, total cost, model and effort, and a progress bar that
 # fills with done and failed targets only, so it never shows progress before a target finishes.
 print_header() {
-  local finished=$((n_done + n_failed)) bar counts
-  bar=$(awk -v n="$n" -v d="$n_done" -v f="$n_failed" -v G="$G" -v R="$R" -v D="$D" -v X="$X" '
-    function seg(k, c, ch,   s, i) { for (i = 0; i < k; i++) s = s ch; return k > 0 ? c s X : "" }
-    BEGIN { w = 30; d = n ? int(w * d / n) : 0; f = n ? int(w * f / n) : 0
-      printf "%s%s%s", seg(d, G, "━"), seg(f, R, "━"), seg(w - d - f, D, "─") }')
+  local finished=$((n_done + n_failed)) counts
   counts="${G}✓ $n_done done$X"
   [ "$n_running" -gt 0 ] && counts="$counts  ${Y}● $n_running running$X"
   [ "$n_failed" -gt 0 ] && counts="$counts  ${R}✗ $n_failed failed$X"
@@ -463,7 +497,7 @@ print_header() {
   printf "🔐 ${B}Security audit$X  ${C}%s$X   ⏳ %s   💰 ${B}%s\$%.2f$X\n" \
     "$RUN" "$(clock "$(since "$OUT/run.start" "$OUT/run.end" 2>/dev/null || echo 0)")" "$approx" "$total"
   printf "   $D%s · %s effort · %s$X\n" "$(run_model)" "${EFFORT:-default}" "$(date +%T)"
-  printf "   %s  ${B}%d/%d$X   %s\n\n" "$bar" "$finished" "$n" "$counts"
+  printf "   %s  ${B}%d/%d$X   %s\n\n" "$(bar 30 "$n" "$n_done" "$G" "$n_failed" "$R")" "$finished" "$n" "$counts"
 }
 
 # Prints the last events, tagged by kind: + done, ! failed, > started, = skipped.
@@ -483,7 +517,8 @@ print_events() {
   done
 }
 
-# Prints one snapshot of the run: state, time, subagents, tokens, cost and activity per target.
+# Prints one snapshot of the run: state, time, subagents, tokens and cost per target, and under it
+# a line with its progress, findings or failure.
 # Cost is exact (claude's own total) once a target ends. While it runs, it is an estimate (~)
 # from the session transcripts at list price, which misses side calls like the auto-mode classifier.
 # A subshell, so the helpers above can set its variables and rely on nullglob, without errexit
@@ -495,13 +530,11 @@ dashboard() (
   # The target column fits the longest name.
   name_width=6
   for target in $names; do [ ${#target} -gt "$name_width" ] && name_width=${#target}; done
-  # On a terminal, the last column gets the width left after the columns before it, and the rule
-  # under the column names spans the screen.
-  width=1000 rule_width=$((name_width + 57))
+  # On a terminal, the line under a target spans the screen after its indent.
+  width=1000
   if [ -n "$color" ]; then
-    width=$(( ${COLUMNS:-$(tput cols 2>/dev/null || echo 160)} - name_width - 52 ))
-    [ "$width" -lt 20 ] && width=20
-    rule_width=$((name_width + 49 + width))
+    width=$(( ${COLUMNS:-$(tput cols 2>/dev/null || echo 160)} - 5 ))
+    [ "$width" -lt 40 ] && width=40
   else
     B="" C="" D="" G="" R="" Y="" X=""
   fi
@@ -509,20 +542,21 @@ dashboard() (
   rows="" total=0 approx="" n=0 n_done=0 n_failed=0 n_running=0 n_waiting=0
   for target in $names; do
     state=$(cat "$OUT/$target.state" 2>/dev/null || echo pending)
-    agents="" tin=0 tout=0 cost="" cost_color=""
+    agents="" tin=0 tout=0 cost="" cost_color="" quiet=""
     n=$((n + 1))
     classify_state "$state"
     time=$(run_time "$target" "$state")
     [ -f "$OUT/$target.session" ] && read_session "$target"
     describe "$target" "$state"
     [ ${#info} -gt "$info_width" ] && info="${info:0:$((info_width - 1))}…"
-    rows+=$(printf " $state_color%s$X $name_color%-*s$X  $state_color%-8s$X %6s %6s %6s %6s $cost_color%8s$X  $info_color%s$X" \
-      "$icon" "$name_width" "$target" "$state" "$time" "$agents" "$(human "$tin")" "$(human "$tout")" "$cost" "$info")$'\n'
+    rows+=$(printf " $state_color%s$X $name_color%-*s$X  $state_color%-8s$X %6s %6s %6s %6s $cost_color%8s$X" \
+      "$icon" "$name_width" "$target" "$state" "$time" "$agents" "$(human "$tin")" "$(human "$tout")" "$cost")$'\n'
+    [ -z "$meter$info" ] || rows+="     $meter$info_color$info$X"$'\n'
   done
 
   print_header
-  printf "   $D%-*s  %-8s %6s %6s %6s %6s %8s  %s$X\n" "$name_width" TARGET STATE TIME AGENTS IN OUT COST ACTIVITY
-  printf "   $D%s$X\n" "$(printf '%*s' "$rule_width" '' | sed 's/ /─/g')"
+  printf "   $D%-*s  %-8s %6s %6s %6s %6s %8s$X\n" "$name_width" TARGET STATE TIME AGENTS IN OUT COST
+  printf "   $D%s$X\n" "$(printf '%*s' $((name_width + 47)) '' | sed 's/ /─/g')"
   printf '%s' "$rows"
   echo
   print_events

@@ -27,6 +27,20 @@ Arguments: `$ARGUMENTS`.
 For a diff, the diff picks which flows to audit; trace them through the unchanged code they touch.
 Run from the repo root.
 
+## Progress
+
+A harness running this skill sets `$AUDIT_PROGRESS` to a file it watches; check once with
+`echo "$AUDIT_PROGRESS"` and skip this section if it prints nothing. Otherwise record each step by
+overwriting that file with one Bash call:
+
+```sh
+printf '{"phase":"%s","done":%d,"total":%d}\n' critic 2 4 >"$AUDIT_PROGRESS"
+```
+
+Phases, in order: `orient` (threat model, sizing the scope), `trace`, `critic`, `test`, `report`.
+Write at the start of each phase with done 0 and total its slices, candidates or tests, then again
+each time one of them finishes.
+
 ## Preflight: threat model
 
 The threat model drives the audit: its entry points and sources say where to start tracing, its

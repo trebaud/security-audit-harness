@@ -10,13 +10,18 @@ merged into one summary.
    claude-opus-5-5 · high effort · 14:20:53
    ━━━━━━━━━━━━━━━━━━────────────  3/5   ✓ 3 done  ● 2 running
 
-   TARGET                STATE      TIME AGENTS     IN    OUT     COST  ACTIVITY
-   ─────────────────────────────────────────────────────────────────────────────
- ✓ e1-public-api         done      14:10      6   2.1M    48k    $1.92  🟠 1 High · ⚪ 2 Low
- ✓ e2-authenticated-api  done      16:31      8   2.8M    61k    $2.40  No findings.
- ✓ e3-webhooks           done      12:02      5   1.6M    37k    $1.33  🔴 1 Critical · 🟡 1 Medium
- ● e4-admin-api          running    9:13      3   410k    12k   ~$0.41  Bash › Run the CSV export ownership test
- ● e5-workers            running    6:49      2   260k     8k   ~$0.25  Grep › job.data.userId
+   TARGET                STATE      TIME AGENTS     IN    OUT     COST
+   ───────────────────────────────────────────────────────────────────
+ ✓ e1-public-api         done      14:10      6   2.1M    48k    $1.92
+     🟠 1 High · ⚪ 2 Low
+ ✓ e2-authenticated-api  done      16:31      8   2.8M    61k    $2.40
+     No findings.
+ ✓ e3-webhooks           done      12:02      5   1.6M    37k    $1.33
+     🔴 1 Critical · 🟡 1 Medium
+ ● e4-admin-api          running    9:13      3   410k    12k   ~$0.41
+     ━━━━━━━━━━━━────────  62%  critic 2/4 · 4s ago
+ ● e5-workers            running    6:49      2   260k     8k   ~$0.25
+     ━━━━━━──────────────  34%  trace 3/5 · 11s ago
 
    14:02:10  · run my-app-20261017: 5 targets, 3 parallel, repo ~/code/my-app
    14:14:25  ✓ e3-webhooks done, $1.33
@@ -24,7 +29,9 @@ merged into one summary.
    14:18:42  ✓ e2-authenticated-api done, $2.40
 ```
 
-<sub>The live dashboard, with illustrative numbers.</sub>
+<sub>The live dashboard, with illustrative numbers. A running audit reports its phase (orient, trace,
+critic, test, report) and how many of that phase's slices, candidates or tests are done; a session
+that writes nothing for 5 minutes is flagged in red.</sub>
 
 ## How it works
 
