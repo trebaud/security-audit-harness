@@ -12,21 +12,21 @@ merged into one summary.
 
    TARGET                STATE      TIME AGENTS     IN    OUT     COST
    ───────────────────────────────────────────────────────────────────
- ✓ e1-public-api         done      14:10      6   2.1M    48k    $1.92
+ ✓ e1-login-form         done      14:10      6   2.1M    48k    $1.92
      🟠 1 High · ⚪ 2 Low
- ✓ e2-authenticated-api  done      16:31      8   2.8M    61k    $2.40
+ ✓ e2-file-upload        done      16:31      8   2.8M    61k    $2.40
      No findings.
- ✓ e3-webhooks           done      12:02      5   1.6M    37k    $1.33
+ ✓ e3-graphql-api        done      12:02      5   1.6M    37k    $1.33
      🔴 1 Critical · 🟡 1 Medium
- ● e4-admin-api          running    9:13      3   410k    12k   ~$0.41
+ ● e4-password-reset     running    9:13      3   410k    12k   ~$0.41
      ━━━━━━━━━━━━────────  62%  critic 2/4 · 4s ago
- ● e5-workers            running    6:49      2   260k     8k   ~$0.25
+ ● e5-image-resizer      running    6:49      2   260k     8k   ~$0.25
      ━━━━━━──────────────  34%  trace 3/5 · 11s ago
 
    14:02:10  · run my-app-20261017: 5 targets, 3 parallel, repo ~/code/my-app
-   14:14:25  ✓ e3-webhooks done, $1.33
-   14:16:21  ✓ e1-public-api done, $1.92
-   14:18:42  ✓ e2-authenticated-api done, $2.40
+   14:14:25  ✓ e3-graphql-api done, $1.33
+   14:16:21  ✓ e1-login-form done, $1.92
+   14:18:42  ✓ e2-file-upload done, $2.40
 ```
 
 <sub>The live dashboard, with illustrative numbers. A running audit reports its phase (orient, trace,
@@ -93,7 +93,7 @@ the skill audits recursively.
 
 | Flag | Default | |
 |---|---|---|
-| `-t, --targets` | each threat-model entry point, e.g. `e2-authenticated-api` | comma-separated target names: lowercase letters, digits, `-` |
+| `-t, --targets` | each threat-model entry point, e.g. `e2-file-upload` | comma-separated target names: lowercase letters, digits, `-` |
 | `-f, --targets-file` | | file with one target per line, `#` comments allowed; combines with `-t` |
 | `-r, --repo` | repo of the current directory | git repo to audit |
 | `-j, --jobs` | `4` | audits in parallel |
@@ -111,9 +111,9 @@ targets, and a command that removes the run's worktrees.
 ```
 runs/my-app-20261017/
 ├── summary-2026-10-17.md            # merged findings, chains, and run stats
-├── e1-public-api-2026-10-17.md      # one report per target
-├── e1-public-api.jsonl              # raw Claude stream of each session
-├── e1-public-api.err
+├── e1-login-form-2026-10-17.md      # one report per target
+├── e1-login-form.jsonl              # raw Claude stream of each session
+├── e1-login-form.err
 └── events.log
 ```
 
